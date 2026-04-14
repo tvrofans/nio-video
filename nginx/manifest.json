@@ -1,0 +1,17 @@
+{
+  "name": "NIO Maps Service",
+  "short_name": "Maps",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "landscape",
+  "categories": ["navigation", "travel"],
+  "icons": [
+    {
+      "src": "https://www.gstatic.com/images/branding/product/2x/maps_96in128dp.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

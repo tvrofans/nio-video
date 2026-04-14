@@ -1,0 +1,29 @@
+version: '3'
+services:
+  # 1. Python 后端应用
+  app:
+    image: python:3.9-slim
+    container_name: nio-app
+    working_dir: /app
+    volumes:
+      - .:/app
+    # 安装依赖并启动 Flask
+    command: >
+      sh -c "pip install -r requirements.txt && 
+             gunicorn -w 4 -b 0.0.0.0:5000 app:app"
+    restart: always
+
+  # 2. Nginx 反代 + 注入器
+  nginx:
+    image: nginx:alpine
+    container_name: nio-nginx
+    restart: always
+    ports:
+      # 对外暴露端口，Cloudflare 回源端口填这个 (例如 2052 映射到宿主机的 18080)
+      - "18080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/canvas.js:/usr/share/nginx/html/canvas.js
+      - ./nginx/manifest.json:/usr/share/nginx/html/manifest.json
+    depends_on:
+      - app

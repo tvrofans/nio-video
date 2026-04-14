@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NIO Video</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            background-color: #f2f2f7; 
+            color: #1d1d1f;            
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow-y: scroll;
+        }
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr); 
+            gap: 20px; 
+            padding: 24px 20px;
+            max-width: 1800px; 
+            margin: 0 auto;
+        }
+        
+        @media(min-width: 768px) { 
+            .gallery-grid { 
+                grid-template-columns: repeat(5, 1fr); 
+                gap: 32px; 
+                padding: 40px; 
+            } 
+        }
+
+        .art-card {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            cursor: pointer;
+            transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .art-card:hover { transform: translateY(-4px); }
+
+        .poster-frame {
+            position: relative;
+            width: 100%;
+            padding-top: 142%; 
+            background-color: #e5e5ea; 
+            border-radius: 16px; 
+            overflow: hidden;
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08); 
+            transition: box-shadow 0.4s ease;
+        }
+        .art-card:hover .poster-frame { box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15); }
+
+        .poster-img {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover;
+            transition: transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1); 
+        }
+        .art-card:hover .poster-img { transform: scale(1.06); }
+
+        .badge {
+            position: absolute; top: 8px; right: 8px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            color: #1d1d1f;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            letter-spacing: 0.5px;
+        }
+
+        .meta-info { padding: 0 4px; }
+        .meta-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1d1d1f;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .meta-sub {
+            font-size: 13px;
+            color: #86868b;
+            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <nav class="sticky top-0 z-50 bg-[#f2f2f7]/80 backdrop-blur-xl border-b border-gray-200/50">
+        <div class="max-w-[1800px] mx-auto px-6 lg:px-10">
+            <div class="flex justify-between items-center h-20">
+                <div class="flex-shrink-0 cursor-pointer flex items-baseline gap-3 group" onclick="location.reload()">
+                    <span class="text-2xl font-[800] tracking-tight text-black select-none">
+                        NIO <span class="text-blue-600">Video</span>
+                    </span>
+                    <span class="text-sm font-semibold text-gray-500 group-hover:text-gray-700 transition-colors select-none tracking-wide" style="position: relative; top: -1px;">
+                        by LiMuZi
+                    </span>
+                </div>
+                <div class="flex-1 max-w-md ml-8 flex justify-end">
+                    <div class="relative w-full group">
+                        <input id="wd" type="text" class="w-full bg-white text-gray-800 text-sm rounded-full pl-6 pr-14 py-3 shadow-sm transition-all outline-none border border-transparent focus:shadow-md focus:scale-[1.01] placeholder-gray-400" placeholder="Search...">
+                        <button onclick="doSearch()" class="absolute right-2 top-1.5 bottom-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 rounded-full text-xs font-bold transition-all active:scale-95">搜</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div id="loading" class="flex-1 flex flex-col items-center justify-center min-h-[60vh] hidden">
+        <div class="flex space-x-2">
+            <div class="w-3 h-3 bg-blue-600 rounded-full animate-bounce"></div>
+            <div class="w-3 h-3 bg-blue-600 rounded-full animate-bounce delay-100"></div>
+            <div class="w-3 h-3 bg-blue-600 rounded-full animate-bounce delay-200"></div>
+        </div>
+    </div>
+
+    <main class="flex-1 w-full">
+        <div id="list" class="gallery-grid"></div>
+        <div id="refresh-container" class="flex justify-center pb-20 pt-8 hidden">
+            <button onclick="changeBatch()" id="refresh-btn" class="bg-white hover:bg-gray-50 text-gray-800 border border-gray-200/60 shadow-[0_8px_20px_-6px_rgba(0,0,0,0.1)] px-10 py-3.5 rounded-full transition-all active:scale-95 hover:shadow-lg flex items-center gap-2 group">
+                <span id="refresh-text" class="text-sm font-bold tracking-wide group-hover:text-blue-600 transition-colors">换一换</span>
+            </button>
+        </div>
+    </main>
+    
+    <script>
+        let globalItems = [];
+        let currentPage = 1; 
+        let isSearching = false; 
+
+        document.addEventListener('DOMContentLoaded', () => load('/api?pg=1'));
+
+        window.addEventListener('resize', () => {
+            if (globalItems.length > 0) render(globalItems);
+        });
+
+        async function load(url) {
+            try {
+                const res = await fetch(url);
+                const json = await res.json();
+                
+                if (json.list && json.list.length === 0 && currentPage > 1) {
+                    currentPage = 1;
+                    load('/api?pg=1');
+                    return;
+                }
+
+                globalItems = json.list || [];
+                render(globalItems);
+                
+                if (!isSearching) {
+                    document.getElementById('refresh-container').classList.remove('hidden');
+                }
+            } catch(e) {
+                showError('网络连接超时');
+            }
+        }
+
+        async function changeBatch() {
+            const btn = document.getElementById('refresh-btn');
+            const textSpan = document.getElementById('refresh-text');
+            btn.disabled = true;
+            btn.classList.add('opacity-70');
+            const originalText = textSpan.innerText;
+            textSpan.innerText = '刷新中...';
+
+            currentPage++;
+            if (currentPage > 10) currentPage = 1; 
+
+            try {
+                await load(`/api?pg=${currentPage}`);
+            } finally {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-70');
+                    textSpan.innerText = originalText;
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }, 300);
+            }
+        }
+
+        async function doSearch() {
+            const wd = document.getElementById('wd').value.trim();
+            if(!wd) return;
+            isSearching = true; 
+            document.getElementById('list').innerHTML = '';
+            document.getElementById('refresh-container').classList.add('hidden'); 
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('loading').classList.add('flex');
+            try {
+                const res = await fetch(`/api/search?wd=${encodeURIComponent(wd)}`);
+                const data = await res.json();
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('loading').classList.remove('flex');
+                globalItems = data;
+                render(globalItems);
+            } catch(e) {
+                showError('搜索服务繁忙');
+            }
+        }
+
+        function render(items) {
+            const list = document.getElementById('list');
+            list.innerHTML = '';
+            if(!items || items.length === 0) {
+                showError('暂无内容');
+                return;
+            }
+            items.forEach(item => {
+                const key = item.source_key || 'liangzi'; 
+                const href = `/play?key=${key}&id=${item.vod_id}`;
+                const card = document.createElement('a');
+                card.href = href;
+                card.className = 'art-card group block';
+                card.innerHTML = `
+                    <div class="poster-frame">
+                        <img class="poster-img" src="${item.vod_pic}" loading="lazy" onerror="this.src='https://via.placeholder.com/300x450/e5e5ea/a1a1aa?text=No+Image'">
+                        <div class="badge">${item.vod_remarks || 'HD'}</div>
+                    </div>
+                    <div class="meta-info">
+                        <h3 class="meta-title group-hover:text-blue-600 transition-colors">${item.vod_name}</h3>
+                        <div class="meta-sub">
+                            <span>${item.vod_year || ''}</span>
+                            <span class="text-xs bg-gray-200/80 px-2 py-0.5 rounded text-gray-500">${item.type_name || item.source_name}</span>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        function showError(msg) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('loading').classList.remove('flex');
+            document.getElementById('list').innerHTML = `
+                <div class="col-span-full flex flex-col items-center justify-center py-32 text-gray-400">
+                    <p class="text-lg font-medium">${msg}</p>
+                </div>
+            `;
+        }
+        
+        document.getElementById('wd').addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') doSearch();
+        });
+    </script>
+</body>
+</html>

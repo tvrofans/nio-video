@@ -1,0 +1,34 @@
+{
+    "sites": [
+        {
+            "key": "liangzi",
+            "name": "量子资源",
+            "api": "https://cj.lziapi.com/api.php/provide/vod/",
+            "active": true
+        },
+        {
+            "key": "hongniu",
+            "name": "红牛资源",
+            "api": "https://www.hongniuzy2.com/api.php/provide/vod/",
+            "active": true
+        },
+        {
+            "key": "subo",
+            "name": "速播资源",
+            "api": "https://subocaiji.com/api.php/provide/vod/",
+            "active": true
+        },
+        {
+            "key": "guangsu",
+            "name": "光速资源",
+            "api": "https://api.guangsuapi.com/api.php/provide/vod/",
+            "active": true
+        },
+        {
+            "key": "haiwa",
+            "name": "海外资源",
+            "api": "https://haiwaapi.com/api.php/provide/vod/",
+            "active": true
+        }
+    ]
+}

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta name="referrer" content="no-referrer">
+    <title>播放中</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dplayer/1.26.0/DPlayer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.1.5/hls.min.js"></script>
+    <style>
+        /* 移除 Tailwind 后补充的原生基础样式，保证车机瞬间渲染不卡顿 */
+        body { background: #000; color: #fff; font-family: sans-serif; padding-bottom: 60px; margin: 0; }
+        
+        /* 核心修复：车机不支持 aspect-ratio，改用 padding-top 强制撑开 16:9 比例 */
+        .player-wrap { position: relative; width: 100%; padding-top: 56.25%; background: #000; z-index: 10; }
+        #dplayer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+        @media(min-width:1024px) { 
+            .player-wrap { max-width: 900px; margin: 20px auto 0; border-radius: 8px; overflow: hidden; padding-top: 0; height: 506px; }
+            .content { max-width: 900px; margin: 0 auto; }
+        }
+
+        .content { padding: 16px; }
+        .title-main { font-size: 20px; font-weight: bold; margin: 0 0 4px 0; }
+        .status-text { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+        .section-mb { margin-bottom: 24px; }
+        .sec-title { font-size: 14px; color: #9ca3af; font-weight: bold; margin: 0 0 8px 0; }
+        
+        /* 选集按钮 */
+        .btn-ep { 
+            background: #1f1f1f; border: 1px solid #333; padding: 12px 0; 
+            border-radius: 6px; text-align: center; color: #ccc; cursor: pointer; 
+            transition: transform 0.1s;
+        }
+        .btn-ep:active { transform: scale(0.95); }
+        .btn-ep.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+        /* 源列表卡片 */
+        .source-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; scrollbar-width: none; }
+        .card { min-width: 100px; background: #1f1f1f; border: 1px solid #333; padding: 10px; border-radius: 6px; text-align: center; cursor: pointer; }
+        .card.active { background: #1d4ed8; border-color: #3b82f6; color: white; }
+        .card-text { font-size: 14px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        
+        .grid-ep { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+        @media(min-width:768px) { .grid-ep { grid-template-columns: repeat(8, 1fr); } }
+
+        /* 状态文字颜色 */
+        .text-red-500 { color: #ef4444; }
+        .text-green-500 { color: #22c55e; }
+    </style>
+</head>
+<body>
+
+    <div class="player-wrap">
+        <div id="dplayer"></div>
+    </div>
+
+    <div class="content">
+        <h1 id="title" class="title-main">加载中...</h1>
+        <div id="status" class="status-text">初始化...</div>
+
+        <div class="section-mb">
+            <h3 class="sec-title">📡 线路 (点击即切)</h3>
+            <div id="sources" class="source-row"></div>
+        </div>
+
+        <div>
+            <h3 class="sec-title">📺 选集</h3>
+            <div id="eps" class="grid-ep"></div>
+        </div>
+    </div>
+
+    <script>
+        // 以下 JS 代码 100% 保持您提供的逻辑，未做任何增删改
+        let dp = null;
+        let currentKey = "";
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(location.search);
+            const key = params.get('key');
+            const id = params.get('id');
+            if(key && id) {
+                currentKey = key;
+                loadData(key, id);
+            }
+        });
+
+        // 核心加载逻辑
+        async function loadData(key, id) {
+            document.getElementById('status').innerText = "获取资源详情...";
+            document.getElementById('status').className = "status-text";
+            
+            try {
+                const res = await fetch(`/api?ac=detail&key=${key}&ids=${id}`);
+                const json = await res.json();
+                
+                if(json.list && json.list.length > 0) {
+                    const data = json.list[0];
+                    document.getElementById('title').innerText = data.vod_name;
+                    
+                    const playFrom = data.vod_play_from.split('$$$');
+                    const playUrl = data.vod_play_url.split('$$$');
+                    
+                    let targetIndex = 0;
+                    for(let i=0; i<playFrom.length; i++) {
+                        if(playFrom[i].toLowerCase().includes('m3u8')) {
+                            targetIndex = i;
+                            break;
+                        }
+                    }
+                    
+                    renderEps(playUrl[targetIndex], data.vod_name);
+                    
+                    const first = parseOneGroup(playUrl[targetIndex])[0];
+                    if(first) play(first.link, `${data.vod_name} - ${first.name}`);
+
+                    searchSame(data.vod_name, key);
+                } else {
+                    document.getElementById('status').innerText = "当前源无此资源，请尝试返回重试";
+                    document.getElementById('status').className = "status-text text-red-500";
+                }
+            } catch(e) {
+                console.error(e);
+                document.getElementById('status').innerText = "加载超时或网络错误";
+                document.getElementById('status').className = "status-text text-red-500";
+            }
+        }
+
+        // 搜索其他源
+        async function searchSame(name, activeKey) {
+            const cleanName = name.replace(/(\(|（|【).*/, '').trim().substring(0, 4);
+            const list = document.getElementById('sources');
+            
+            list.innerHTML = `<div class="card active"><div class="card-text">当前线路</div></div>`;
+            
+            try {
+                const res = await fetch(`/api/search?wd=${encodeURIComponent(cleanName)}`);
+                const data = await res.json();
+                
+                data.forEach(item => {
+                    if(item.source_key === activeKey) return;
+
+                    const div = document.createElement('div');
+                    div.className = 'card';
+                    div.innerHTML = `<div class="card-text">${item.source_name}</div>`;
+                    
+                    div.onclick = () => {
+                        list.innerHTML = `<div class="card active"><div class="card-text">切换中...</div></div>`;
+                        currentKey = item.source_key;
+                        
+                        const newUrl = `?key=${item.source_key}&id=${item.vod_id}`;
+                        try { window.history.replaceState(null, '', newUrl); } catch(e){}
+
+                        loadData(item.source_key, item.vod_id);
+                    };
+                    
+                    list.appendChild(div);
+                });
+            } catch(e) {}
+        }
+
+        function play(url, title) {
+            const status = document.getElementById('status');
+            status.innerText = `正在播放: ${title}`;
+            status.className = "status-text text-green-500";
+            
+            if(dp) {
+                dp.destroy();
+                dp = null;
+            }
+            document.getElementById('dplayer').innerHTML = '';
+            
+            dp = new DPlayer({
+                container: document.getElementById('dplayer'),
+                video: {
+                    url: url,
+                    type: 'customHls',
+                    customType: {
+                        customHls: function(video, player) {
+                            const hls = new Hls();
+                            hls.loadSource(video.src);
+                            hls.attachMedia(video);
+                            hls.on(Hls.Events.ERROR, (e, data) => {
+                                if(data.fatal) {
+                                    status.innerText = "播放失败，请尝试切换线路";
+                                    status.className = "status-text text-red-500";
+                                }
+                            });
+                        }
+                    }
+                },
+                autoplay: true,
+                theme: '#2563eb'
+            });
+            dp.on('canplay', () => {
+                status.innerText = `正在播放: ${title}`;
+                status.className = "status-text text-green-500";
+                dp.play();
+            });
+        }
+
+        function parseOneGroup(str) {
+            if(!str) return [];
+            return str.split('#').map(p => {
+                const parts = p.split('$');
+                if(parts.length >= 2) return { name: parts[0], link: parts[1] };
+                return { name: '正片', link: p };
+            });
+        }
+
+        function renderEps(str, title) {
+            const box = document.getElementById('eps');
+            box.innerHTML = '';
+            const list = parseOneGroup(str);
+            list.forEach((ep, i) => {
+                const btn = document.createElement('div');
+                btn.className = `btn-ep ${i===0?'active':''}`;
+                btn.innerText = ep.name;
+                btn.onclick = () => {
+                    document.querySelectorAll('.btn-ep').forEach(b=>b.classList.remove('active'));
+                    btn.classList.add('active');
+                    play(ep.link, `${title} - ${ep.name}`);
+                };
+                box.appendChild(btn);
+            });
+        }
+    </script>
+</body>
+</html>
